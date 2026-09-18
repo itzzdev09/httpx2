@@ -73,14 +73,23 @@ async def test_bytesio_content() -> None:
 def test_file_content() -> None:
     with tempfile.TemporaryFile() as file:
         file.write(b"0123456789")
-        for offset in (4, 10, 15):
-            file.seek(offset)
-            expected = b"0123456789"[offset:]
+        file.seek(4)
 
-            request = httpx2.Request(method, url, content=file)
-            assert file.tell() == offset
-            assert request.headers["Content-Length"] == str(len(expected))
-            assert request.read() == expected
+        request = httpx2.Request(method, url, content=file)
+        assert file.tell() == 4
+        assert request.headers["Content-Length"] == "6"
+        assert request.read() == b"456789"
+
+        request = httpx2.Request(method, url, content=file)
+        assert file.tell() == 10
+        assert request.headers["Content-Length"] == "0"
+        assert request.read() == b""
+
+        file.seek(15)
+        request = httpx2.Request(method, url, content=file)
+        assert file.tell() == 15
+        assert request.headers["Content-Length"] == "0"
+        assert request.read() == b""
 
 
 def test_gzip_file_content() -> None:
