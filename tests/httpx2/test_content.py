@@ -70,17 +70,17 @@ async def test_bytesio_content() -> None:
     assert content == b"Hello, world!"
 
 
-@pytest.mark.parametrize("offset", [4, 10, 15])
-def test_file_content(offset: int) -> None:
+def test_file_content() -> None:
     with tempfile.TemporaryFile() as file:
         file.write(b"0123456789")
-        file.seek(offset)
-        expected = b"0123456789"[offset:]
+        for offset in (4, 10, 15):
+            file.seek(offset)
+            expected = b"0123456789"[offset:]
 
-        request = httpx2.Request(method, url, content=file)
-        assert file.tell() == offset
-        assert request.headers["Content-Length"] == str(len(expected))
-        assert request.read() == expected
+            request = httpx2.Request(method, url, content=file)
+            assert file.tell() == offset
+            assert request.headers["Content-Length"] == str(len(expected))
+            assert request.read() == expected
 
 
 def test_gzip_file_content() -> None:
