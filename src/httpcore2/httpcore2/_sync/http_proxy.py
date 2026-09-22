@@ -298,7 +298,17 @@ class TunnelHTTPConnection(ConnectionInterface):
                     "timeout": timeout,
                 }
                 with Trace("start_tls", logger, request, kwargs) as trace:
-                    stream = stream.start_tls(**kwargs)
+                    try:
+                        stream = stream.start_tls(**kwargs)
+                    except BaseException:
+                        # The CONNECT tunnel's underlying connection succeeded
+                        # and is otherwise indistinguishable from a live,
+                        # in-use connection to the pool. If the TLS upgrade
+                        # fails, close it explicitly so it doesn't linger in
+                        # the pool as a stale ACTIVE connection and leak a
+                        # connection-pool slot on every failure.
+                        self._connection.close()
+                        raise
                     trace.return_value = stream
 
                 # Determine if we should be using HTTP/1.1 or HTTP/2
