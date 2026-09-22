@@ -17,7 +17,7 @@ from .._models import (
     enforce_url,
 )
 from .._ssl import default_ssl_context
-from .._synchronization import AsyncLock
+from .._synchronization import AsyncLock, AsyncShieldCancellation
 from .._trace import Trace
 from .connection import AsyncHTTPConnection
 from .connection_pool import AsyncConnectionPool
@@ -307,7 +307,18 @@ class AsyncTunnelHTTPConnection(AsyncConnectionInterface):
                         # fails, close it explicitly so it doesn't linger in
                         # the pool as a stale ACTIVE connection and leak a
                         # connection-pool slot on every failure.
-                        await self._connection.aclose()
+                        #
+                        # Shielded from cancellation, same as the other
+                        # exception-path cleanups in this codebase, so a
+                        # Trio cancellation can't interrupt the close and
+                        # leave the TLS socket open. Any failure from the
+                        # close itself is swallowed so it can't mask the
+                        # TLS error callers are expecting.
+                        with AsyncShieldCancellation():
+                            try:
+                                await self._connection.aclose()
+                            except BaseException:
+                                pass
                         raise
                     trace.return_value = stream
 

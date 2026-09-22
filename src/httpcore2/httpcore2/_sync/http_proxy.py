@@ -17,7 +17,7 @@ from .._models import (
     enforce_url,
 )
 from .._ssl import default_ssl_context
-from .._synchronization import Lock
+from .._synchronization import Lock, ShieldCancellation
 from .._trace import Trace
 from .connection import HTTPConnection
 from .connection_pool import ConnectionPool
@@ -307,7 +307,18 @@ class TunnelHTTPConnection(ConnectionInterface):
                         # fails, close it explicitly so it doesn't linger in
                         # the pool as a stale ACTIVE connection and leak a
                         # connection-pool slot on every failure.
-                        self._connection.close()
+                        #
+                        # Shielded from cancellation, same as the other
+                        # exception-path cleanups in this codebase, so a
+                        # Trio cancellation can't interrupt the close and
+                        # leave the TLS socket open. Any failure from the
+                        # close itself is swallowed so it can't mask the
+                        # TLS error callers are expecting.
+                        with ShieldCancellation():
+                            try:
+                                self._connection.close()
+                            except BaseException:
+                                pass
                         raise
                     trace.return_value = stream
 

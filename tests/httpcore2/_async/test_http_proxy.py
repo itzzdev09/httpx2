@@ -258,6 +258,53 @@ async def test_proxy_tunneling_with_tls_failure() -> None:
             assert not proxy.connections
 
 
+class FailingCloseStream(AsyncMockStream):
+    async def start_tls(
+        self,
+        ssl_context: ssl.SSLContext,
+        server_hostname: str | None = None,
+        timeout: float | None = None,
+    ) -> AsyncNetworkStream:
+        raise ConnectError("simulated TLS handshake failure")
+
+    async def aclose(self) -> None:
+        # Simulate the cleanup close (triggered by the TLS failure above)
+        # itself failing, e.g. because the socket was already reset.
+        raise RuntimeError("simulated close failure")
+
+
+class FailingCloseBackend(AsyncMockBackend):
+    async def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options: typing.Iterable[SOCKET_OPTION] | None = None,
+    ) -> AsyncNetworkStream:
+        return FailingCloseStream(list(self._buffer))
+
+
+@pytest.mark.anyio
+async def test_proxy_tunneling_with_tls_failure_and_failing_close() -> None:
+    """
+    A failure while closing the tunnel connection after a TLS handshake
+    failure must not mask the original ConnectError.
+    """
+    network_backend = FailingCloseBackend(
+        [
+            b"HTTP/1.1 200 OK\r\n\r\n",
+        ]
+    )
+
+    async with AsyncConnectionPool(
+        proxy=Proxy("http://localhost:8080/"),
+        network_backend=network_backend,
+    ) as proxy:
+        with pytest.raises(ConnectError, match="simulated TLS handshake failure"):
+            await proxy.request("GET", "https://example.com/")
+
+
 @pytest.mark.anyio
 async def test_proxy_tunneling_with_auth() -> None:
     """
